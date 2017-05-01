@@ -1,0 +1,104 @@
+##
+## Ensure the Docker Machine has at least 4 GB RAM
+## Increase vm.max_map_count to 262144
+##
+version: '2'
+services:
+  dt_server:
+    image: dynatrace/server:6.5
+    container_name: dtelk_dt_server
+    links:
+      - elasticsearch
+      - postgres
+    ports:
+      - 2021:2021 # Client
+      - 6698:6698 # Collector (TCP)
+      - 6699:6699 # Collector (TCP over SSL)
+      - 8020:8020 # Web Server (HTTP)
+      - 8021:8021 # Web Server (HTTPS)
+      - 9911:9911 # Web UI (HTTPS)
+    networks:
+      - service_network
+    volumes:
+      - dynatrace-data:/dynatrace/server/sessions
+
+  dt_collector:
+    image: dynatrace/collector
+    container_name: dtelk_dt_collector
+    environment:
+      - DT_COLLECTOR_NAME=docker-collector-01
+      - DT_COLLECTOR_GROUP_NAME=docker-group
+      - DTSERVER_ENV_HOST_NAME=dt_server
+    links:
+      - dt_server
+    ports:
+      - 9998:9998
+    networks:
+      - service_network
+
+  dt_agent:
+    image: dynatrace/agent
+    container_name: dtelk_dt_agent
+
+  postgres:
+    image: postgres
+    container_name: dtelk_postgres
+    environment:
+      - POSTGRES_USER=service_user
+      - POSTGRES_PASSWORD=MyPostgresPassword
+    ports:
+      - 5432:5432
+    networks:
+      - service_network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:5.3.0
+    container_name: dtelk_elasticsearch
+    environment:
+      - "cluster.name=docker-cluster"
+      - "http.host=0.0.0.0"
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - 9200:9200
+    mem_limit: 512m
+    volumes:
+      - elastic-data:/usr/share/elasticsearch/data
+    networks:
+      - service_network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:5.3.0
+    container_name: dtelk_kibana
+    environment:
+      - "elasticsearch.url=elasticsearch"
+    links:
+      - elasticsearch
+    ports:
+      - 5601:5601
+    networks:
+      - service_network
+
+# TODO ADD LOGSTASH
+#  logstash:
+#    image: docker.elastic.co/logstash/logstash:5.3.2
+
+# TODO ADD EASYTRAVEL
+
+volumes:
+  elastic-data:
+    driver: local
+  dynatrace-data:
+    driver: local
+
+networks:
+  service_network:
+    driver: bridge
